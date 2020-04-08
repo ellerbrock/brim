@@ -275,6 +275,9 @@ export const waitUntilDownloadFinished = async (app: Application) =>
     )
   })
 
+export const pcapsDir = async (app: Application) =>
+  await app.electron.remote.app.getPath("temp")
+
 export const toggleOptimizations = async (app: Application) => {
   // Stateless toggle of optimizations. If you use this twice after reset
   // state, both will be back to their original state. This is only used to
@@ -315,4 +318,26 @@ export const pcapIngestSample = async (app: Application) => {
       (ingesting) => ingesting === false
     )
   )
+}
+
+const waitForClickableButtonAndClick = async (
+  app: Application,
+  selector: string
+) => {
+  await appStep(`wait for button ${selector} to be visible`, () =>
+    app.client.waitForVisible(selector)
+  )
+
+  await appStep(`wait for button ${selector} to be enabled`, () =>
+    retryUntil(
+      () => app.client.getAttribute(selectors.pcaps.button, "disabled"),
+      (isDisabled) => !isDisabled
+    )
+  )
+
+  await click(app, selector)
+}
+
+export const clickPcapButton = async (app: Application) => {
+  await waitForClickableButtonAndClick(app, selectors.pcaps.button)
 }
