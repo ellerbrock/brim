@@ -42,13 +42,53 @@ jobs:
     - run: npm run flow
     - run: npm test -- --maxWorkers=2 --ci
 
-  integration_test:
-    runs-on: ${{ matrix.os }}
+  integration_test_ubuntu:
+    runs-on: ubuntu-18.04
+    needs: build
     strategy:
       matrix:
         node-version: [12.x]
-        os: [macos-10.15, ubuntu-18.04]
+    steps:
+    - uses: actions/checkout@v2
+    - name: setup node version ${{ matrix.node-version }}
+      uses: actions/setup-node@v1
+      with:
+        node-version: ${{ matrix.node-version }}
+    - name: Set NPM Cache Directory
+      id: set-npm-cache-dir
+      run: echo "::set-output name=npm_cache_dir::$(npm config get cache)"
+    - name: Cache node modules
+      uses: actions/cache@v1
+      env:
+        cache-name: cache-node-modules3
+      with:
+        path: ${{ steps.set-npm-cache-dir.outputs.npm_cache_dir }}
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.node-version }}-
+    - run: npm install --no-audit
+    - run: npm run build
+    - name: Integration Tests
+      run: xvfb-run --auto-servernum -s "-screen 0 1280x1024x24" npm run itest -- --ci --forceExit
+      env:
+        # WORKSPACE represents a top-level place for test infra code to
+        # find and put things. That avoids proliferation of env
+        # variables of directories. It's used to dump logs into the
+        # correct place so that CI can reliably find them for
+        # collection.
+        WORKSPACE: /var/tmp/brimsec
+    - uses: actions/upload-artifact@v1
+      if: failure()
+      with:
+        name: artifacts
+        path: /var/tmp/brimsec/logs
+
+  integration_test_mac:
+    runs-on: macos-10.15
     needs: build
+    strategy:
+      matrix:
+        node-version: [12.x]
     steps:
     - uses: actions/checkout@v2
     - name: setup node version ${{ matrix.node-version }}
@@ -75,25 +115,13 @@ jobs:
     - run: npm install --no-audit
     - run: npm run build
     - name: Build and Install MacOS DMG
-      if: runner.os == 'macOS'
       run: |
         set -x
         node scripts/release --darwin
         hdiutil attach dist/installers/Brim.dmg
         cp -R /Volumes/Brim/Brim.app /Applications
         hdiutil detach /Volumes/Brim
-    - name: Integration Tests (Linux)
-      if: runner.os == 'Linux'
-      run: xvfb-run --auto-servernum -s "-screen 0 1280x1024x24" npm run itest -- --ci --forceExit
-      env:
-        # WORKSPACE represents a top-level place for test infra code to
-        # find and put things. That avoids proliferation of env
-        # variables of directories. It's used to dump logs into the
-        # correct place so that CI can reliably find them for
-        # collection.
-        WORKSPACE: /var/tmp/brimsec
-    - name: Integration Tests (non-Linux)
-      if: runner.os != 'Linux'
+    - name: Integration Tests
       run: npm run itest -- --ci --forceExit
       env:
         WORKSPACE: /var/tmp/brimsec
